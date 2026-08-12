@@ -10,6 +10,7 @@
 ![Windows](https://img.shields.io/badge/Windows-NTFS-0078D4?style=for-the-badge&logo=windows&logoColor=white)
 ![ACL](https://img.shields.io/badge/ACL-Cleanup-4CAF50?style=for-the-badge)
 ![JSON](https://img.shields.io/badge/JSON-Logging-orange?style=for-the-badge)
+[![License](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/)
 
 **PowerShell-скрипт для безопасной очистки ACL каталогов с сохранением групповых и системных разрешений, владельца и состояния наследования.**
 
@@ -1190,7 +1191,7 @@ param(
 
     [Parameter()]
     [AllowEmptyString()]
-    [string]$AdsiAccountName = 'DOMAIN\service.account'
+    [string]$AdsiAccountName = 'DOMAIN\User'
 )
 ```
 
@@ -1240,7 +1241,7 @@ param(
 
 <div align="center">
 
-**Clear-FolderGroupAcl**
+**NTFS-ACL-Group-Cleanup**
 
 Безопасная очистка пользовательских NTFS ACL с сохранением групп, системных субъектов безопасности и существующей модели наследования.
 
