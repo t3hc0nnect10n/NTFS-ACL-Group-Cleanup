@@ -1080,7 +1080,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         $invokeParameters['Confirm'] = $ConfirmChanges
     }
 
-    $logFileName = 'Clear-FolderGroupAcl-{0}.log' -f $ExecutionMode
+    $nowDate = (Get-Date).ToString("yyyyMMddHHmmss")
+    $logFileName = 'Clear-FolderGroupAcl-{0}-{1}.log' -f $ExecutionMode, $nowDate
     $logFilePath = Join-Path -Path $logDirectory -ChildPath $logFileName
 
     # Результаты одновременно выводятся в консоль и записываются в JSON.
