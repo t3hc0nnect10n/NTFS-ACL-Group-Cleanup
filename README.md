@@ -10,7 +10,7 @@
 ![JSON](https://img.shields.io/badge/JSON-Logging-orange?style=for-the-badge)
 [![License](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey?style=for-the-badge)](https://creativecommons.org/licenses/by-nc/4.0/)
 
-### Безопасная очистка **NTFS ACL** от явных пользовательских разрешений и осиротевших **SID**
+## Безопасная очистка **NTFS ACL** от явных пользовательских разрешений и осиротевших **SID**
 
 **PowerShell-скрипт для безопасной очистки ACL каталогов с сохранением групповых и системных разрешений, владельца и состояния наследования.**
 
