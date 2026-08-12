@@ -116,7 +116,7 @@ flowchart TD
 A[Получение ACL каталога]
 --> B[Анализ каждой ACE]
 
-B --> C{ACE является<br/>Inherited?}
+B --> C{ACE является <br/>Inherited?}
 
 C -->|Да| D[Оставить]
 
