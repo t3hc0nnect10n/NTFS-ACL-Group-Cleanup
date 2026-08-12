@@ -1027,6 +1027,45 @@ $log.Results |
 
 ---
 
+## Сводный план удаления и обновления наследования
+
+Команда выводит только каталоги, для которых в режиме **Apply** запланировано
+удаление явных правил либо обновление устаревших унаследованных правил.
+
+```powershell
+$log.Results |
+    Where-Object {
+        $_.PlannedRemovalCount -gt 0 -or
+        $_.PlannedInheritanceRefreshRuleCount -gt 0
+    } |
+    Select-Object Path,
+        InheritanceEnabled,
+        PlannedRemovalCount,
+        PlannedRules,
+        PlannedInheritanceRefreshRuleCount,
+        PlannedInheritanceRefreshRules
+```
+
+Значения полей:
+
+- `PlannedRules` — явные ACE, которые будут удалены;
+- `PlannedInheritanceRefreshRules` — унаследованные ACE, для которых будет
+  выполнено повторное получение наследования от родителя.
+
+---
+
+## Каталоги с запланированным обновлением наследования
+
+```powershell
+$log.Results |
+    Where-Object { $_.PlannedInheritanceRefreshRuleCount -gt 0 } |
+    Select-Object Path,
+        PlannedInheritanceRefreshRuleCount,
+        PlannedInheritanceRefreshRules
+```
+
+---
+
 ## Пользователи, запланированные к удалению
 
 ```powershell
@@ -1064,7 +1103,6 @@ $log.Results |
     Where-Object { $_.Status -eq 'Failed' -or $_.Error } |
     Select-Object Path, Status, Error
 ```
-
 ---
 
 # 📊 Сравнение результатов WhatIf и Apply
