@@ -1132,6 +1132,7 @@ $log.Results |
     Where-Object { $_.Status -eq 'Failed' -or $_.Error } |
     Select-Object Path, Status, Error
 ```
+
 ---
 
 # 📊 Сравнение результатов WhatIf и Apply
@@ -1303,8 +1304,6 @@ Error
 
 > [!IMPORTANT]
 > Ошибка обработки одного каталога не останавливает выполнение скрипта. После фиксации ошибки обработка продолжается для остальных доступных элементов.
-
-<p align="right"><a href="#readme-top">🔝</a></p>
 
 ---
 
