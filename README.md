@@ -943,9 +943,14 @@ InheritOnly
 Файл создаётся в папке "Downloads" текущего пользователя.
 
 > [!NOTE]
-> При каждом новом запуске существующий журнал соответствующего режима не перезаписывается.
-> В имени добавляется "yyyyMMddHHmmss", например:
-> Clear-FolderGroupAcl-WhatIf-20260812212440.log или Clear-FolderGroupAcl-Apply-20260812212440.log
+> Каждый запуск создаёт отдельный JSON-журнал.
+>
+> В имя файла автоматически добавляется дата и время запуска в формате **`yyyyMMddHHmmss`**, например:
+>
+> ```text
+> Clear-FolderGroupAcl-WhatIf-20260812212440.log
+> Clear-FolderGroupAcl-Apply-20260812212440.log
+> ```
 
 ---
 
