@@ -1090,7 +1090,7 @@ $log.Results |
     Where-Object { $_.PlannedInheritanceRefreshRuleCount -gt 0 } |
     Select-Object Path,
         PlannedInheritanceRefreshRuleCount,
-        PlannedInheritanceRefreshRules
+        PlannedInheritanceRefreshRules | Format-List
 ```
 
 ---
@@ -1098,9 +1098,13 @@ $log.Results |
 ## Пользователи, запланированные к удалению
 
 ```powershell
-$log.Results |
-    ForEach-Object { $_.PlannedRules } |
-    Where-Object { $_.PrincipalType -eq 'User' }
+$log.Results | ForEach-Object {
+    $folderPath = $_.Path
+
+    $_.PlannedRules |
+        Where-Object { $_.PrincipalType -eq 'User' } |
+        Select-Object @{ Name = 'Path'; Expression = { $folderPath } }, *
+} | Format-List
 ```
 
 ---
@@ -1108,9 +1112,13 @@ $log.Results |
 ## Осиротевшие SID
 
 ```powershell
-$log.Results |
-    ForEach-Object { $_.PlannedRules } |
-    Where-Object { $_.PrincipalType -eq 'OrphanedSid' }
+$log.Results | ForEach-Object {
+    $folderPath = $_.Path
+
+    $_.PlannedRules |
+        Where-Object { $_.PrincipalType -eq 'OrphanedSid' } |
+        Select-Object @{ Name = 'Path'; Expression = { $folderPath } }, *
+} | Format-List
 ```
 
 ---
@@ -1118,9 +1126,16 @@ $log.Results |
 ## Неизвестные субъекты безопасности
 
 ```powershell
-$log.Results |
-    ForEach-Object { $_.PreservedUnknownRules } |
-    Select-Object Identity, Sid, LookupMethod, Detail
+$log.Results | ForEach-Object {
+    $folderPath = $_.Path
+
+    $_.PreservedUnknownRules |
+        Select-Object @{ Name = 'Path'; Expression = { $folderPath } },
+            Identity,
+            Sid,
+            LookupMethod,
+            Detail
+} | Format-List
 ```
 
 ---
@@ -1130,7 +1145,7 @@ $log.Results |
 ```powershell
 $log.Results |
     Where-Object { $_.Status -eq 'Failed' -or $_.Error } |
-    Select-Object Path, Status, Error
+    Select-Object Path, Status, Error | Format-List
 ```
 
 ---
