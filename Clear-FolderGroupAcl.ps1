@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Version 1.0.0.0
+    Version 1.1.0.0
     Запускает очистку ACL папок с параметрами, заданными в начале файла.
 
 .DESCRIPTION
@@ -29,6 +29,10 @@
     Имя учетной записи для окна Get-Credential. Пустое значение позволяет указать
     имя непосредственно в окне запроса.
 
+.PARAMETER RefreshStaleInheritance
+    Включает принудительное обновление наследования для папок, где остались
+    унаследованные правила пользователей или осиротевших SID.
+
 .EXAMPLE
     .\Clear-FolderGroupAcl.ps1
 
@@ -55,6 +59,8 @@
 	    - (c) 2026 t3hc0nnect10n
 #>
 
+#Requires -Version 5.1
+
 [CmdletBinding()]
 param(
     # Укажите одну или несколько корневых папок для обработки.
@@ -64,32 +70,45 @@ param(
         'D:\SharedFolder\Department\Root'
     )
     ,
+
     # Укажите точные имена исключаемых папок без путей.
     [Parameter()]
     [ValidateNotNull()]
     [ValidatePattern('^[^\\/:*?"<>|]+$')]
     [string[]]$ExcludeFolderName = @(
-        "Archive"
+        'Example-1',
+        'Example-2'
     )
     ,
+
     # Для реального изменения ACL замените WhatIf на Apply.
     [Parameter()]
     [ValidateSet('WhatIf', 'Apply')]
     [string]$ExecutionMode = 'WhatIf'
     ,
+
     # В режиме Apply значение $true запрашивает подтверждение изменений.
     [Parameter()]
     [bool]$ConfirmChanges = $true
     ,
+
     # Значение $true включает запрос учетных данных и проверку через ADSI WinNT.
     [Parameter()]
     [bool]$UseAdsiCredential = $true
     ,
-    # Можно указать имя вида Domain\User или оставить пустую строку.
+
+    # Можно указать имя вида DOMAIN\User или оставить пустую строку.
     [Parameter()]
     [AllowEmptyString()]
     [string]$AdsiAccountName = 'DOMAIN\User'
     ,
+
+    # Обновлять наследование, если нежелательная унаследованная ACE осталась
+    # после очистки родительских папок.
+    [Parameter()]
+    [bool]$RefreshStaleInheritance = $true
+    ,
+    
     # Директория куда сохранится лог.
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -110,6 +129,9 @@ Set-StrictMode -Version Latest
 # | Формирование объектов результата:                  |
 # | - ConvertTo-FolderAclRuleInfo                      |
 # | - ConvertTo-FolderAclCleanupResult                 |
+# |                                                    |
+# | Обновление наследования:                           |
+# | - Invoke-FolderAclInheritanceRefresh               |
 # |                                                    |
 # | Журналирование:                                    |
 # | - Write-FolderAclResultLog                         |
@@ -359,21 +381,22 @@ function Get-AclPrincipalClassification {
     if ($null -ne $Credential) {
         try {
             $principalType = Get-AdsiPrincipalType -AccountName $accountName -Credential $Credential
-            $result = [pscustomobject]@{
-                PSTypeName    = 'FolderAcl.PrincipalClassification'
-                Sid           = $Sid.Value
-                Identity      = $accountName
-                PrincipalType = $principalType
-                LookupMethod  = 'AdsiWinNT'
-                Detail        = if ($principalType -eq 'Unknown') {
-                    'ADSI WinNT вернула неподдерживаемый тип учетной записи.'
+            if ($principalType -ne 'Unknown') {
+                $result = [pscustomobject]@{
+                    PSTypeName    = 'FolderAcl.PrincipalClassification'
+                    Sid           = $Sid.Value
+                    Identity      = $accountName
+                    PrincipalType = $principalType
+                    LookupMethod  = 'AdsiWinNT'
+                    Detail        = $null
                 }
-                else {
-                    $null
-                }
+                $Cache[$cacheKey] = $result
+                return $result
             }
-            $Cache[$cacheKey] = $result
-            return $result
+
+            # Неизвестный класс ADSI не является окончательным результатом:
+            # передаем SID в LookupAccountSid для безопасной классификации.
+            $adsiErrorMessage = 'ADSI WinNT вернула неподдерживаемый тип учетной записи.'
         }
         catch {
             $adsiErrorMessage = $_.Exception.Message
@@ -396,7 +419,7 @@ function Get-AclPrincipalClassification {
                 'LookupAccountSidFallback'
             }
             Detail        = if ($null -ne $adsiErrorMessage) {
-                'ADSI WinNT недоступна, использован LookupAccountSid: {0}' -f $adsiErrorMessage
+                'ADSI WinNT не определила тип, использован LookupAccountSid: {0}' -f $adsiErrorMessage
             }
             elseif ($principalType -eq 'Unknown') {
                 'Windows вернула неподдерживаемый тип учетной записи.'
@@ -480,6 +503,12 @@ function ConvertTo-FolderAclCleanupResult {
         [object[]]$PlannedRules = @(),
 
         [Parameter()]
+        [object[]]$PlannedInheritanceRefreshRules = @(),
+
+        [Parameter()]
+        [object[]]$RefreshedInheritedRules = @(),
+
+        [Parameter()]
         [object[]]$PreservedGroupRules = @(),
 
         [Parameter()]
@@ -497,24 +526,104 @@ function ConvertTo-FolderAclCleanupResult {
     )
 
     return [pscustomobject]@{
-        PSTypeName                = 'FolderAcl.CleanupResult'
-        Path                      = $Path
-        Status                    = $Status
-        InheritanceEnabled        = $InheritanceEnabled
-        Changed                   = $Changed
-        RemovedRuleCount          = $RemovedRules.Count
-        PlannedRemovalCount       = $PlannedRules.Count
-        PreservedGroupRuleCount   = $PreservedGroupRules.Count
-        PreservedSystemRuleCount  = $PreservedSystemRules.Count
-        SkippedInheritedRuleCount = $SkippedInheritedRules.Count
-        PreservedUnknownRuleCount = $PreservedUnknownRules.Count
-        RemovedRules              = @($RemovedRules)
-        PlannedRules              = @($PlannedRules)
-        PreservedGroupRules       = @($PreservedGroupRules)
-        PreservedSystemRules      = @($PreservedSystemRules)
-        SkippedInheritedRules     = @($SkippedInheritedRules)
-        PreservedUnknownRules     = @($PreservedUnknownRules)
-        Error                     = $ErrorMessage
+        PSTypeName                          = 'FolderAcl.CleanupResult'
+        Path                                = $Path
+        Status                              = $Status
+        InheritanceEnabled                  = $InheritanceEnabled
+        Changed                             = $Changed
+        RemovedRuleCount                    = $RemovedRules.Count
+        PlannedRemovalCount                 = $PlannedRules.Count
+        PlannedInheritanceRefreshRuleCount  = $PlannedInheritanceRefreshRules.Count
+        RefreshedInheritedRuleCount         = $RefreshedInheritedRules.Count
+        PreservedGroupRuleCount             = $PreservedGroupRules.Count
+        PreservedSystemRuleCount            = $PreservedSystemRules.Count
+        SkippedInheritedRuleCount           = $SkippedInheritedRules.Count
+        PreservedUnknownRuleCount           = $PreservedUnknownRules.Count
+        RemovedRules                        = @($RemovedRules)
+        PlannedRules                        = @($PlannedRules)
+        PlannedInheritanceRefreshRules      = @($PlannedInheritanceRefreshRules)
+        RefreshedInheritedRules             = @($RefreshedInheritedRules)
+        PreservedGroupRules                 = @($PreservedGroupRules)
+        PreservedSystemRules                = @($PreservedSystemRules)
+        SkippedInheritedRules               = @($SkippedInheritedRules)
+        PreservedUnknownRules               = @($PreservedUnknownRules)
+        Error                               = $ErrorMessage
+    }
+}
+
+# Функция атомарно формирует незащищенную DACL без старых унаследованных ACE.
+# При записи Windows повторно получает наследуемые правила от текущего родителя.
+function Invoke-FolderAclInheritanceRefresh {
+    <#
+    .SYNOPSIS
+    Принудительно обновляет унаследованные правила ACL папки.
+
+    .DESCRIPTION
+    В памяти временно защищает DACL без копирования наследуемых ACE, затем снова
+    включает наследование и выполняет единственную запись Set-Acl. Явные ACE,
+    владелец и конечное состояние наследования сохраняются. При ошибке проверки
+    выполняется попытка восстановить исходный дескриптор безопасности.
+
+    .PARAMETER Path
+    Полный путь к папке с включенным наследованием.
+
+    .EXAMPLE
+    Invoke-FolderAclInheritanceRefresh -Path 'D:\Data\Child'
+
+    Повторно получает унаследованные ACE папки от ее текущего родителя.
+
+    .NOTES
+    Функция является внутренней. Вызывающий код обязан получить разрешение
+    ShouldProcess до ее запуска.
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Security.AccessControl.DirectorySecurity])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    $originalSddl = $null
+    try {
+        $acl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+        if ($acl.AreAccessRulesProtected) {
+            throw "Наследование ACL папки '$Path' отключено."
+        }
+
+        $allSections = [System.Security.AccessControl.AccessControlSections]::All
+        $originalSddl = $acl.GetSecurityDescriptorSddlForm($allSections)
+
+        # Два переключения выполняются только над объектом в памяти. На диск
+        # записывается сразу итоговая незащищенная DACL без устаревших ACE.
+        $acl.SetAccessRuleProtection($true, $false)
+        $acl.SetAccessRuleProtection($false, $false)
+        Set-Acl -LiteralPath $Path -AclObject $acl -ErrorAction Stop
+
+        $refreshedAcl = Get-Acl -LiteralPath $Path -ErrorAction Stop
+        if ($refreshedAcl.AreAccessRulesProtected) {
+            throw "После обновления наследование ACL папки '$Path' осталось отключенным."
+        }
+
+        return $refreshedAcl
+    }
+    catch {
+        $refreshError = $_.Exception.Message
+        if (-not [string]::IsNullOrWhiteSpace($originalSddl)) {
+            try {
+                $rollbackAcl = New-Object System.Security.AccessControl.DirectorySecurity
+                $rollbackAcl.SetSecurityDescriptorSddlForm(
+                    $originalSddl,
+                    [System.Security.AccessControl.AccessControlSections]::All
+                )
+                Set-Acl -LiteralPath $Path -AclObject $rollbackAcl -ErrorAction Stop
+            }
+            catch {
+                throw "Не удалось обновить наследование ACL папки '$Path': $refreshError Ошибка отката: $($_.Exception.Message)"
+            }
+        }
+
+        throw "Не удалось обновить наследование ACL папки '$Path': $refreshError"
     }
 }
 
@@ -586,7 +695,7 @@ function Write-FolderAclResultLog {
             $modeJson = ConvertTo-Json -InputObject $ExecutionMode -Compress
             $startedAtJson = ConvertTo-Json -InputObject $startedAt -Compress
             $writer.WriteLine('{')
-            $writer.WriteLine('  "SchemaVersion": "1.0",')
+            $writer.WriteLine('  "SchemaVersion": "1.1",')
             $writer.WriteLine(('  "ExecutionMode": {0},' -f $modeJson))
             $writer.WriteLine(('  "StartedAt": {0},' -f $startedAtJson))
             $writer.WriteLine('  "Results": [')
@@ -641,11 +750,12 @@ function Clear-FolderGroupAcl {
 
     .DESCRIPTION
     Обрабатывает указанную корневую папку и все вложенные папки сверху вниз.
-    Владелец, состояние наследования, групповые и системные правила не изменяются.
-    Явные правила пользователей и неразрешаемых SID удаляются. Унаследованные
-    нежелательные правила отмечаются в результате, поскольку они должны удаляться
-    в папке-источнике. Папки из списка исключений и все их поддеревья пропускаются.
-    Точки повторной обработки не изменяют ACL, поэтому функция идемпотентна.
+    Владелец, конечное состояние наследования, групповые и системные правила не
+    изменяются. Явные правила пользователей и неразрешаемых SID удаляются.
+    Для устаревших унаследованных правил функция может принудительно повторно
+    получить ACL от очищенного родителя. Папки из списка исключений и все их
+    поддеревья пропускаются. Повторная обработка не изменяет уже очищенный ACL,
+    поэтому функция идемпотентна.
 
     .PARAMETER Path
     Путь к верхней папке обрабатываемого дерева. Обрабатывается сама папка и все
@@ -658,6 +768,10 @@ function Clear-FolderGroupAcl {
     .PARAMETER Credential
     Учетные данные для проверки типа учетных записей через ADSI WinNT. Если
     ADSI недоступна, автоматически используется LookupAccountSid.
+
+    .PARAMETER RefreshStaleInheritance
+    При значении true принудительно обновляет наследование папок, в которых
+    обнаружены унаследованные правила пользователей или осиротевших SID.
 
     .EXAMPLE
     Clear-FolderGroupAcl -Path 'D:\example1\example2\example3' -WhatIf
@@ -698,7 +812,10 @@ function Clear-FolderGroupAcl {
 
         [Parameter()]
         [AllowNull()]
-        [System.Management.Automation.PSCredential]$Credential
+        [System.Management.Automation.PSCredential]$Credential,
+
+        [Parameter()]
+        [bool]$RefreshStaleInheritance = $true
     )
 
     begin {
@@ -755,6 +872,8 @@ function Clear-FolderGroupAcl {
                 # вернуть полный отчет независимо от результата изменения ACL.
                 $removedRules = New-Object 'System.Collections.Generic.List[object]'
                 $plannedRules = New-Object 'System.Collections.Generic.List[object]'
+                $plannedInheritanceRefreshRules = New-Object 'System.Collections.Generic.List[object]'
+                $refreshedInheritedRules = New-Object 'System.Collections.Generic.List[object]'
                 $preservedGroupRules = New-Object 'System.Collections.Generic.List[object]'
                 $preservedSystemRules = New-Object 'System.Collections.Generic.List[object]'
                 $skippedInheritedRules = New-Object 'System.Collections.Generic.List[object]'
@@ -795,7 +914,12 @@ function Clear-FolderGroupAcl {
                             }
                             { $_ -in @('User', 'OrphanedSid') } {
                                 if ($rule.IsInherited) {
-                                    [void]$skippedInheritedRules.Add($ruleInfo)
+                                    if ($RefreshStaleInheritance -and $inheritanceEnabled) {
+                                        [void]$plannedInheritanceRefreshRules.Add($ruleInfo)
+                                    }
+                                    else {
+                                        [void]$skippedInheritedRules.Add($ruleInfo)
+                                    }
                                 }
                                 else {
                                     [void]$rulesToRemove.Add($rule)
@@ -825,6 +949,42 @@ function Clear-FolderGroupAcl {
                             foreach ($plannedRule in $plannedRules) {
                                 [void]$removedRules.Add($plannedRule)
                             }
+                            $changed = $true
+                            $status = 'Changed'
+                        }
+                        else {
+                            $status = 'WhatIf'
+                        }
+                    }
+
+                    # Если после обработки родителя остались нежелательные
+                    # унаследованные ACE, повторно формируем наследуемую часть DACL.
+                    if ($plannedInheritanceRefreshRules.Count -gt 0) {
+                        $operation = 'Обновить наследование для проверки {0} пользовательских или осиротевших правил ACL' -f $plannedInheritanceRefreshRules.Count
+                        if ($PSCmdlet.ShouldProcess($currentPath, $operation)) {
+                            $acl = Invoke-FolderAclInheritanceRefresh -Path $currentPath
+                            $refreshedAccessRules = $acl.GetAccessRules(
+                                $true,
+                                $true,
+                                [System.Security.Principal.SecurityIdentifier]
+                            )
+                            $remainingInheritedSid = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+                            foreach ($refreshedRule in $refreshedAccessRules) {
+                                if ($refreshedRule.IsInherited) {
+                                    [void]$remainingInheritedSid.Add($refreshedRule.IdentityReference.Value)
+                                }
+                            }
+
+                            foreach ($plannedRefreshRule in $plannedInheritanceRefreshRules) {
+                                if ($remainingInheritedSid.Contains($plannedRefreshRule.Sid)) {
+                                    $plannedRefreshRule.Detail = 'Правило повторно получено от текущего родителя; удалите его в фактической папке-источнике.'
+                                    [void]$skippedInheritedRules.Add($plannedRefreshRule)
+                                }
+                                else {
+                                    [void]$refreshedInheritedRules.Add($plannedRefreshRule)
+                                }
+                            }
+
                             $changed = $true
                             $status = 'Changed'
                         }
@@ -866,6 +1026,8 @@ function Clear-FolderGroupAcl {
                     -Changed $changed `
                     -RemovedRules $removedRules.ToArray() `
                     -PlannedRules $plannedRules.ToArray() `
+                    -PlannedInheritanceRefreshRules $plannedInheritanceRefreshRules.ToArray() `
+                    -RefreshedInheritedRules $refreshedInheritedRules.ToArray() `
                     -PreservedGroupRules $preservedGroupRules.ToArray() `
                     -PreservedSystemRules $preservedSystemRules.ToArray() `
                     -SkippedInheritedRules $skippedInheritedRules.ToArray() `
@@ -887,8 +1049,9 @@ function Clear-FolderGroupAcl {
 if ($MyInvocation.InvocationName -ne '.') {
     # Формируем набор параметров для основной функции.
     $invokeParameters = @{
-        Path              = $Path
-        ExcludeFolderName = $ExcludeFolderName
+        Path                    = $Path
+        ExcludeFolderName       = $ExcludeFolderName
+        RefreshStaleInheritance = $RefreshStaleInheritance
     }
 
     # При включенной ADSI-проверке запрашиваем пароль интерактивно. Пароль не
