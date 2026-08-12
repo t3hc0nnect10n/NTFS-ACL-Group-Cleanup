@@ -220,7 +220,7 @@ IsInherited = True
 
 - наследование текущей папки включено;
 - обнаружена унаследованная ACE типа `User` или `OrphanedSid`;
-- `RefreshStaleInheritance = $true`;
+- параметр `RefreshStaleInheritance = $true`;
 - изменение разрешено стандартным механизмом `ShouldProcess`.
 
 Скрипт сохраняет исходный дескриптор безопасности для аварийного отката,
