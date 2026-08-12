@@ -539,6 +539,9 @@ PlannedRemovalCount
 PlannedRules
 PlannedInheritanceRefreshRuleCount
 PlannedInheritanceRefreshRules
+RefreshedInheritedRuleCount
+RefreshedInheritedRules
+SkippedInheritedRuleCount
 SkippedInheritedRules
 PreservedUnknownRules
 Error
