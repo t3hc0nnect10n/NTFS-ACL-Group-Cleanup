@@ -2,7 +2,7 @@
 
 <div align="center">
 
-# 🔐 NTFS-ACL-Group-Cleanup
+# 🔐 NTFS-ACL-CleanUp
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-5.1+-5391FE?style=for-the-badge&logo=powershell&logoColor=white)
 ![Windows](https://img.shields.io/badge/Windows-NTFS-0078D4?style=for-the-badge&logo=windows&logoColor=white)
@@ -1537,7 +1537,7 @@ param(
 
 <div align="center">
 
-**NTFS-ACL-Group-Cleanup**
+**NTFS-ACL-CleanUp**
 
 Безопасная очистка пользовательских NTFS ACL с сохранением групп, системных субъектов безопасности и существующей модели наследования.
 
