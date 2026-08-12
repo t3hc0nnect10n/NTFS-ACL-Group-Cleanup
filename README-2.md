@@ -1161,10 +1161,46 @@ $whatIf = Get-Content '.\Clear-FolderGroupAcl-WhatIf.log' -Raw -Encoding UTF8 |
 $apply = Get-Content '.\Clear-FolderGroupAcl-Apply.log' -Raw -Encoding UTF8 |
     ConvertFrom-Json
 
+# Общая статистика.
 [pscustomobject]@{
-    Planned = ($whatIf.Results.PlannedRemovalCount | Measure-Object -Sum).Sum
-    Removed = ($apply.Results.RemovedRuleCount | Measure-Object -Sum).Sum
-}
+    PlannedRemoval = ($whatIf.Results.PlannedRemovalCount |
+        Measure-Object -Sum).Sum
+    Removed = ($apply.Results.RemovedRuleCount |
+        Measure-Object -Sum).Sum
+    PlannedRefresh = ($whatIf.Results.PlannedInheritanceRefreshRuleCount |
+        Measure-Object -Sum).Sum
+    Refreshed = ($apply.Results.RefreshedInheritedRuleCount |
+        Measure-Object -Sum).Sum
+} | Format-List
+
+# Изменённые папки.
+$apply.Results |
+    Where-Object { $_.Changed } |
+    Select-Object Path,
+        RemovedRuleCount,
+        RefreshedInheritedRuleCount |
+    Format-List
+
+# Полный перечень фактически удалённых явных правил.
+$apply.Results | ForEach-Object {
+    $folderPath = $_.Path
+    $_.RemovedRules |
+        Select-Object @{
+            Name = 'Path'
+            Expression = { $folderPath }
+        }, *
+} | Format-List
+
+# Полный перечень правил, удалённых обновлением наследования.
+$apply.Results | ForEach-Object {
+    $folderPath = $_.Path
+    $_.RefreshedInheritedRules |
+        Select-Object @{
+            Name = 'Path'
+            Expression = { $folderPath }
+        }, *
+} | Format-List
+
 ```
 
 > [!TIP]
